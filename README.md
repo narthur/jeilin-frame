@@ -10,7 +10,8 @@ No public datasheet, pinout or prior hacking write-up for the JL4204A was found.
 - [x] Patch, flash and observe loop proven: the settings-menu title was changed to "Hacked" and it showed on screen.
 - [x] Map the code-bank switching so all 512 KB of code loads in Ghidra.
 - [x] Find the USB mass-storage SCSI command handler.
-- [ ] Find the display/framebuffer code.
+- [x] Read SDRAM over USB with a debug vendor command (`patches/sdram_read.*`).
+- [ ] Find the display/framebuffer code. Two screen-sized image buffers have been found in SDRAM (below); which one is displayed, and how, isn't known yet.
 - [ ] Add a vendor SCSI command that writes pixels.
 
 ## Hardware
@@ -85,11 +86,22 @@ sha256 `a8fa459d406738e396d9750df2b2e48573b8c394d5124c2d6a5e83ec18a9a93b`
   | 2F | VERIFY | `dda2` |
   | **EB, EC** | vendor | **no handler.** At `bank2:9464` they skip the ILLEGAL REQUEST path and go straight to the CSW, so they succeed and do nothing. |
 
-  Anything else gets sense key 5 / ASC `0x20`. **The planned hook** is to redirect the `JZ` at `bank2:9466` (opcode `0xEB`) to a new handler in bank 2's free space: 2,427 bytes at `0xF685`, the same bank, so no bank switch is needed.
+  Anything else gets sense key 5 / ASC `0x20`. Before dispatching, the dispatcher does the Bulk-Only Transport "13 cases" check: `bank2:b117` returns the data length the device expects for the opcode, `bank2:ee27` the direction, and the command only runs if the host's CBW matches exactly. Otherwise it fails with ASC `0x24` (or a phase error). A data-in handler must first select the bulk-in endpoint, as INQUIRY does through `bank3:FA97(1, 0)` (page 8: `0xB1` = 1, `0xB2` = 0), then write bytes to `0xBC`.
 - **DMA engine.** The driver is `bank4:D2C4`, on SFR page `0x0B`. It takes a 32-bit bus address in R4–R7 and a descriptor in XDATA: `0x0690` length (32-bit), `0x0694` mode, and `0x0695` a third 32-bit value. It starts the transfer by setting bit 0 of a control register and polls bit 1 until it finishes. Bus addresses reach the 8 MB SDRAM. The modes seen so far:
   - **Mode 1** moves USB data. WRITE(10) moves each 64-byte packet to SDRAM `0x00152600 + i·0x40`.
   - **Mode 2** fills `length` bytes with the third value. It's used to clear buffers at `0x006C7200–0x00734400`. The text renderer `bank3:49AD` clears `0x00734400` (0x3400 or 0xA000 bytes) before drawing glyphs.
-- **Not yet found:** the framebuffer address, the pixel format, the LCD controller registers, and what the firmware does to the display when USB connects (the screen goes dark).
+- **SDRAM contents** (from a full dump over USB with the debug command, taken while the frame was connected and its screen dark):
+
+  | SDRAM | Contents |
+  |---|---|
+  | `0x000000–0x1DFFFF` | copy of flash from `0x1000` on (code, fonts, compressed images) |
+  | `~0x240000–0x2EFFFF` | a second copy of the font data |
+  | `0x2F5E00` | image buffer A: 480×234 Y plane, then 480×234×2 bytes of chroma at `0x3114C0` |
+  | `0x3BBE00` | image buffer B, same layout, chroma at `0x3D74C0` |
+  | `~0x760000–0x7DFFFF` | decoded UI icons, 1,440 bytes per row |
+
+  Both buffers held the blue swoosh menu background. The pixel format looks like **YUV, 480×234: a Y plane followed by a plane of interleaved V,U per pixel (4:4:4, 960 bytes per row)**, inferred from the plane sizes. Chroma order is unconfirmed: V first decodes as a blue background, U first as orange. The buffer addresses don't appear as constants in the code.
+- **Not yet found:** which buffer is displayed, the pixel format, the LCD controller registers, and what the firmware does to the display when USB connects (the screen goes dark).
 - Free space in each bank's window, in bytes: 0: 14484, 1: 7054, 2: 2427, 3: 622, 4: 6999, 5: 2579, 6: 1446, 7: 3274. The common area has 1,110 bytes free at `0x2BAA`.
 - The UI strings are plain ASCII in 36-byte slots. The English settings menu starts around `0x640C9`, and the title "Settings" is at `0x64255`.
 - The firmware has an updater that loads from a memory card ("New firmware is found!" at `0x695EC`). The file name it looks for hasn't been found yet.
@@ -98,6 +110,14 @@ sha256 `a8fa459d406738e396d9750df2b2e48573b8c394d5124c2d6a5e83ec18a9a93b`
 ## Patches
 
 [`patches/settings_hacked.py`](patches/settings_hacked.py) renames the settings title to "Hacked". It reproduces the image that was flashed and tested, sha256 `ed69234648f22e1154ea79892627ca31cb1c688c57211933f57c451cc3726cb8`.
+
+[`patches/sdram_read.py`](patches/sdram_read.py) assembles [`sdram_read.asm`](patches/sdram_read.asm) (needs sdcc's `sdas8051`) and adds a debug vendor command that reads SDRAM over USB. Apply it after `settings_hacked.py`: `python3 patches/sdram_read.py hacked.bin out.bin`. Command `EB 01 a3 a2 a1 a0 n1 n0`: read `n` bytes (even, 2–65534) from SDRAM bus address `a3..a0`, both big-endian. For example, with sg3-utils:
+
+```sh
+sudo sg_raw -r 32768 -o chunk.bin /dev/sg0 EB 01 00 2F 5E 00 80 00 00 00 00 00
+```
+
+The host must ask for exactly `n` bytes; anything else is rejected. A full 8 MB dump in 32 KB chunks takes about 25 s.
 
 ## Ghidra
 
