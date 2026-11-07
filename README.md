@@ -116,7 +116,7 @@ analyzeHeadless ~/ghidra-projects/jeilin jeilin -process 'bank*.bin' -scriptPath
   -preScript SeedVectors.java -postScript SeedBanked.java
 ```
 
-[`SeedBanked.java`](ghidra/SeedBanked.java) names every banked-call stub `b<bank>_<target>` and seeds functions at the targets in each bank. That takes each bank from about 40 functions to 300–430. Ghidra doesn't follow calls between banks on its own, so a call to `b3_FD61` means: go to `bank3.bin`, at `0xFD61`. The script also handles Keil's `?C?LSTKXDATA` helper at `0x0B25`, which takes a 4-byte constant inline after the `LCALL`. Without that, Ghidra decodes the constant as code, garbling about 1,400 call sites. Run the script on freshly imported programs.
+[`SeedBanked.java`](ghidra/SeedBanked.java) names every banked-call stub `b<bank>_<target>` and seeds functions at the targets in each bank. That takes each bank from about 40 functions to 310–445. Ghidra doesn't follow calls between banks on its own, so a call to `b3_FD61` means: go to `bank3.bin`, at `0xFD61`. The script also handles Keil's `?C?LSTKXDATA` helper at `0x0B25`, which takes a 4-byte constant inline after the `LCALL`. Without that, Ghidra decodes the constant as code, garbling about 1,400 call sites. Run the script on freshly imported programs.
 
 ## Copyright
 

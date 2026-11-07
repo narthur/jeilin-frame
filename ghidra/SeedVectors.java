@@ -1,6 +1,6 @@
 // Seed disassembly at the 8051 reset + interrupt vectors, then auto-analyze.
 // A raw binary import has no entry point, so Ghidra finds nothing without this.
-// analyzeHeadless <proj_dir> <proj> -process bank00.bin -scriptPath ghidra -postScript SeedVectors.java
+// analyzeHeadless <proj_dir> <proj> -process boot.bin -scriptPath ghidra -postScript SeedVectors.java
 import ghidra.app.script.GhidraScript;
 
 public class SeedVectors extends GhidraScript {

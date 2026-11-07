@@ -9,12 +9,16 @@
 // that belong to this program's bank. Bank is read from the program name.
 //
 // Keil's ?C?LSTKXDATA at 0x0B25 takes a 4-byte constant inline after the
-// LCALL and returns past it. It is marked no-return only while disassembling so
-// Ghidra doesn't decode the constant as code; each call then gets a dword
-// plus a fall-through override to call+7, and analysis repeats until stable.
-// Run on freshly imported programs; it can't remove code already decoded
-// from those constants.
-// analyzeHeadless <dir> <proj> -process 'bank*.bin' -scriptPath ghidra -postScript SeedBanked.java
+// LCALL and returns past it. It is marked no-return during this script's
+// analysis passes so Ghidra doesn't decode the constant as code. Each call then
+// gets its 4 bytes cleared and typed as a dword, plus a fall-through override to
+// call+7, and analysis repeats until no call is left (at most 20 passes).
+// Afterwards the helper is returning again, the no-return flow overrides are
+// dropped, and every function body is recomputed.
+// Code that earlier analysis decoded *beyond* a constant (misaligned flow) is
+// not cleaned up, so run this on freshly imported programs.
+// analyzeHeadless <dir> <proj> -process 'bank*.bin' -scriptPath ghidra \
+//   -preScript SeedVectors.java -postScript SeedBanked.java
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.Address;
@@ -32,7 +36,8 @@ public class SeedBanked extends GhidraScript {
 
     Address lstk = toAddr(LSTKXDATA);
     disassemble(lstk);
-    Function lf = createFunction(lstk, "C_LSTKXDATA");
+    name(lstk, "C_LSTKXDATA");
+    Function lf = getFunctionAt(lstk);
     lf.setNoReturn(true);
 
     for (int n = 0; n < 8; n++) {
