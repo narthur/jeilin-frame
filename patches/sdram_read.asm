@@ -20,7 +20,9 @@ STATUS  = 0x1460        ; CSW status byte
 SENSE   = 0x1481        ; sense key
 ASC     = 0x144E
 CSW     = 0x94DD        ; dispatcher: send CSW
-NEXT    = 0x946D        ; dispatcher: rest of the opcode checks
+NEXT    = 0x946D        ; dispatcher: rest of the opcode checks (reloads A, ignores CY)
+;
+; PAGE is set again before every paged SFR access, as the stock code does.
 
 entry:  mov     a,r7                    ; r7 = opcode
         cjne    a,#0xEB,not_eb
@@ -29,6 +31,9 @@ not_eb: cjne    a,#0xEC,other
         ljmp    CSW                     ; 0xEC: unchanged, succeed doing nothing
 other:  ljmp    NEXT
 
+; Only reached when the host asked for 0 bytes (any other length for a bad CDB
+; is rejected by the dispatcher first). The ORL BD below has no endpoint
+; selected on this path and is untested there.
 bad:    mov     dptr,#SENSE
         mov     a,#5                    ; ILLEGAL REQUEST
         movx    @dptr,a
@@ -94,7 +99,11 @@ wready: mov     PAGE,#4
         mov     0xB2,#0
 
         ; copy count bytes: SDRAM data port -> bulk-in FIFO
-        ; r6:r5 counts down; r5 pre-adjusted so DJNZ handles the high byte
+        ; r6:r5 counts down; r6 is pre-incremented when r5 != 0 so the two DJNZs
+        ; run exactly r6:r5 times
+        ; ponytail: wready and wfifo wait forever; if the host stops reading
+        ; mid-transfer the frame hangs until power-cycled. Add the drain loops'
+        ; bail checks if that bites.
         mov     a,r5
         jz      loop
         inc     r6
@@ -109,7 +118,8 @@ wfifo:  mov     PAGE,#8
         djnz    r5,loop
         djnz    r6,loop
 
-        ; wait for the FIFO to drain, as INQUIRY does (bails on 0xAD bit 7 clear)
+        ; wait for the FIFO to drain, as INQUIRY does (bails on bit 0x05 set or
+        ; on 0xAD bit 7 clear)
 wdone1: mov     PAGE,#8
         mov     a,0xB3
         jb      acc.1,wdone2
@@ -133,7 +143,8 @@ ok:     clr     a
 ; their first instruction, MOV DPTR,#0x146F, is patched to jump here.
 
 ; length: n for a valid EB 01 CDB, else 0 (the dispatcher then rejects it,
-; stalling the pipe as the BOT spec wants)
+; stalling the pipe as the BOT spec wants). Skipping b117's store to 0x0215 is
+; fine: it's a scratch local that every user (927d, d2c5, d933) writes first.
 len_hook:
         mov     dptr,#CDB
         movx    a,@dptr
@@ -154,7 +165,7 @@ len_hook:
         movx    a,@dptr
         mov     r6,a
 len_ret: ret
-len_orig: ljmp  0xB11A                  ; dptr = CDB, as the original left it
+len_orig: ljmp  0xB11A                  ; b117+3; dptr = CDB, as the original left it
 
 ; direction: EB is data-in
 dir_hook:
@@ -163,4 +174,4 @@ dir_hook:
         cjne    a,#0xEB,dir_orig
         mov     r7,#1
         ret
-dir_orig: ljmp  0xEE2A
+dir_orig: ljmp  0xEE2A                  ; ee27+3, past the patched MOV DPTR

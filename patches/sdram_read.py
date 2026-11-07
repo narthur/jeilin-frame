@@ -3,7 +3,9 @@
 Assembles sdram_read.asm with sdcc's sdas8051, drops it into bank 2's free
 space at 0xF685, points the dispatcher's vendor-opcode check at it, and hooks
 the dispatcher's expected-length/direction functions so it accepts EB's data-in.
-Usage: python3 patches/sdram_read.py in.bin out.bin   (in.bin: original or already-patched image)
+Usage: python3 patches/sdram_read.py in.bin out.bin
+in.bin: the original or settings_hacked.py image; one that already has this
+patch is refused.
 """
 import os, re, subprocess, sys, tempfile
 
