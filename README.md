@@ -86,6 +86,10 @@ sha256 `a8fa459d406738e396d9750df2b2e48573b8c394d5124c2d6a5e83ec18a9a93b`
   | **EB, EC** | vendor | **no handler.** At `bank2:9464` they skip the ILLEGAL REQUEST path and go straight to the CSW, so they succeed and do nothing. |
 
   Anything else gets sense key 5 / ASC `0x20`. **The planned hook** is to redirect the `JZ` at `bank2:9466` (opcode `0xEB`) to a new handler in bank 2's free space: 2,427 bytes at `0xF685`, the same bank, so no bank switch is needed.
+- **DMA engine.** The driver is `bank4:D2C4`, on SFR page `0x0B`. It takes a 32-bit bus address in R4–R7 and a descriptor in XDATA: `0x0690` length (32-bit), `0x0694` mode, and `0x0695` a third 32-bit value. It starts the transfer by setting bit 0 of a control register and polls bit 1 until it finishes. Bus addresses reach the 8 MB SDRAM. The modes seen so far:
+  - **Mode 1** moves USB data. WRITE(10) moves each 64-byte packet to SDRAM `0x00152600 + i·0x40`.
+  - **Mode 2** fills `length` bytes with the third value. It's used to clear buffers at `0x006C7200–0x00734400`. The text renderer `bank3:49AD` clears `0x00734400` (0x3400 or 0xA000 bytes) before drawing glyphs.
+- **Not yet found:** the framebuffer address, the pixel format, the LCD controller registers, and what the firmware does to the display when USB connects (the screen goes dark).
 - Free space in each bank's window, in bytes: 0: 14484, 1: 7054, 2: 2427, 3: 622, 4: 6999, 5: 2579, 6: 1446, 7: 3274. The common area has 1,110 bytes free at `0x2BAA`.
 - The UI strings are plain ASCII in 36-byte slots. The English settings menu starts around `0x640C9`, and the title "Settings" is at `0x64255`.
 - The firmware has an updater that loads from a memory card ("New firmware is found!" at `0x695EC`). The file name it looks for hasn't been found yet.
@@ -107,11 +111,12 @@ for k in range(8): open(f"bank{k}.bin", "wb").write(d[k*0x10000 + 0x1000 : k*0x1
 PY
 analyzeHeadless ~/ghidra-projects/jeilin jeilin -import boot.bin bank?.bin \
   -loader BinaryLoader -processor 8051:BE:16:default -noanalysis
-analyzeHeadless ~/ghidra-projects/jeilin jeilin -process -scriptPath ghidra -postScript SeedVectors.java
-analyzeHeadless ~/ghidra-projects/jeilin jeilin -process 'bank*.bin' -scriptPath ghidra -postScript SeedBanked.java
+analyzeHeadless ~/ghidra-projects/jeilin jeilin -process boot.bin -scriptPath ghidra -postScript SeedVectors.java
+analyzeHeadless ~/ghidra-projects/jeilin jeilin -process 'bank*.bin' -scriptPath ghidra \
+  -preScript SeedVectors.java -postScript SeedBanked.java
 ```
 
-[`SeedBanked.java`](ghidra/SeedBanked.java) names every banked-call stub `b<bank>_<target>` and seeds functions at the targets in each bank. That takes each bank from about 40 functions to 300–430. Ghidra doesn't follow calls between banks on its own, so a call to `b3_FD61` means: go to `bank3.bin`, at `0xFD61`.
+[`SeedBanked.java`](ghidra/SeedBanked.java) names every banked-call stub `b<bank>_<target>` and seeds functions at the targets in each bank. That takes each bank from about 40 functions to 300–430. Ghidra doesn't follow calls between banks on its own, so a call to `b3_FD61` means: go to `bank3.bin`, at `0xFD61`. The script also handles Keil's `?C?LSTKXDATA` helper at `0x0B25`, which takes a 4-byte constant inline after the `LCALL`. Without that, Ghidra decodes the constant as code, garbling about 1,400 call sites. Run the script on freshly imported programs.
 
 ## Copyright
 
