@@ -101,7 +101,7 @@ sha256 `a8fa459d406738e396d9750df2b2e48573b8c394d5124c2d6a5e83ec18a9a93b`
   | `~0x760000–0x7DFFFF` | decoded UI icons, 1,440 bytes per row |
 
   Both buffers held the blue swoosh menu background. The pixel format looks like **YUV, 480×234: a Y plane followed by a plane of interleaved V,U per pixel (4:4:4, 960 bytes per row)**, inferred from the plane sizes. Chroma order is unconfirmed: V first decodes as a blue background, U first as orange. The buffer addresses don't appear as constants in the code.
-- **Not yet found:** which buffer is displayed, the confirmed pixel format, the LCD controller registers, and what the firmware does to the display when USB connects (the screen goes dark).
+- **Not yet found:** which buffer is displayed, the chroma order, the LCD controller registers, and what the firmware does to the display when USB connects (the screen goes dark).
 - Free space in each bank's window in the stock image, in bytes: 0: 14484, 1: 7054, 2: 2427, 3: 622, 4: 6999, 5: 2579, 6: 1446, 7: 3274. The common area has 1,110 bytes free at `0x2BAA`.
 - The UI strings are plain ASCII in 36-byte slots. The English settings menu starts around `0x640C9`, and the title "Settings" is at `0x64255`.
 - The firmware has an updater that loads from a memory card ("New firmware is found!" at `0x695EC`). The file name it looks for hasn't been found yet.
